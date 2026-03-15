@@ -7878,14 +7878,20 @@ do
 			
 			if not target_part then
 				local selected_target = Stranded.target_strafe.selected_target or "Auto"
+				if type(selected_target) ~= "string" then
+					selected_target = "Auto"
+				end
+
 				if selected_target ~= "Auto" then
 					local selected_target_lower = string.lower(selected_target)
 					for _, player in ipairs(self.vars.players:GetPlayers()) do
 						if player ~= self.vars.local_player then
 							local display_name = player.DisplayName or player.Name
 							local combined_name = string.lower(player.Name .. " (@" .. display_name .. ")")
+							local username_with_at = string.lower("@" .. player.Name)
 							if string.lower(player.Name) == selected_target_lower
 								or string.lower(display_name) == selected_target_lower
+								or username_with_at == selected_target_lower
 								or combined_name == selected_target_lower then
 								target_player = player
 								if player.Character then
@@ -13323,22 +13329,32 @@ local success_ui, err = pcall(function()
 		end
 	end})
 
+	local players_service = game:GetService("Players")
 	local refresh_target_strafe_targets = function()
 		local target_items = {"Auto"}
-		for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-			if player ~= game:GetService("Players").LocalPlayer then
-				table.insert(target_items, player.Name .. " (@" .. (player.DisplayName or player.Name) .. ")")
+		for _, player in ipairs(players_service:GetPlayers()) do
+			if player ~= players_service.LocalPlayer then
+				TableInsert(target_items, player.Name .. " (@" .. (player.DisplayName or player.Name) .. ")")
 			end
 		end
 
 		if target_strafe_target_dropdown and target_strafe_target_dropdown.Refresh then
-			target_strafe_target_dropdown:Refresh(target_items)
+			local ok = pcall(function()
+				target_strafe_target_dropdown:Refresh(target_items)
+			end)
+			if not ok then
+				return
+			end
 		end
 	end
 
 	refresh_target_strafe_targets()
-	game:GetService("Players").PlayerAdded:Connect(refresh_target_strafe_targets)
-	game:GetService("Players").PlayerRemoving:Connect(refresh_target_strafe_targets)
+	if players_service.PlayerAdded and players_service.PlayerAdded.Connect then
+		players_service.PlayerAdded:Connect(refresh_target_strafe_targets)
+	end
+	if players_service.PlayerRemoving and players_service.PlayerRemoving.Connect then
+		players_service.PlayerRemoving:Connect(refresh_target_strafe_targets)
+	end
 
 	TargetStrafeSection:Button({Name = "Refresh Target List", Callback = function()
 		refresh_target_strafe_targets()
