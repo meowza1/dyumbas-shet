@@ -4444,18 +4444,23 @@ local Stranded = {
 		speed = 10,
 		height = 10,
 		distance = 10,
+		server_only = true,
 	},
 	desync = {
 		enabled = false,
 		active = false,
 		keybind = Enum.KeyCode.F,
 		break_move_direction = false,
+		mode = "Random",
 		min_x = -10,
 		max_x = 10,
 		min_y = -10,
 		max_y = 10,
 		min_z = -10,
 		max_z = 10,
+		void_depth = 250,
+		sky_height = 250,
+		horizontal_jitter = 5,
 		min_rotation = 0,
 		max_rotation = 360,
 		max_velocity = math.huge,
@@ -7983,10 +7988,26 @@ do
 			end
 			
 			local orbit_position = target_position + Vector3.new(horizontal_offset_x, vertical_offset_y, horizontal_offset_z)
-			local orbit_cframe = CFrame.new(orbit_position)
+			local orbit_cframe = CFrame.new(orbit_position, target_position)
 			
-			local_root.CFrame = orbit_cframe
-			local_root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			if Stranded.target_strafe.server_only then
+				local original_cframe = local_root.CFrame
+				local original_velocity = local_root.AssemblyLinearVelocity
+				local_root.CFrame = orbit_cframe
+				local_root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+				
+				local rs = self.vars.rs or game:GetService("RunService")
+				rs:BindToRenderStep("TargetStrafeRestore", Enum.RenderPriority.Camera.Value - 2, function()
+					if local_root and local_root.Parent then
+						local_root.CFrame = original_cframe
+						local_root.AssemblyLinearVelocity = original_velocity
+					end
+					rs:UnbindFromRenderStep("TargetStrafeRestore")
+				end)
+			else
+				local_root.CFrame = orbit_cframe
+				local_root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			end
 		end,
 		cframe_movement_update = function()
 			if not Stranded.cframe then
@@ -9846,18 +9867,39 @@ do
 			self.desync_cache.last_cframe = hrp.CFrame
 			self.desync_cache.last_velocity = hrp.AssemblyLinearVelocity
 			
-			local x = math.random(Stranded.desync.min_x * 100, Stranded.desync.max_x * 100) / 100
-			local y = math.random(Stranded.desync.min_y * 100, Stranded.desync.max_y * 100) / 100
-			local z = math.random(Stranded.desync.min_z * 100, Stranded.desync.max_z * 100) / 100
-			local random_offset = Vector3.new(x, y, z)
+			local desync_mode = Stranded.desync.mode or "Random"
+			local random_offset = Vector3.new(0, 0, 0)
+			local base_pos = self.desync_cache.last_cframe.Position
 			
-			local fake_pos = self.desync_cache.last_cframe.Position + random_offset
+			if desync_mode == "Void" then
+				local jitter = Stranded.desync.horizontal_jitter or 0
+				random_offset = Vector3.new(
+					math.random(-jitter * 100, jitter * 100) / 100,
+					-math.abs(Stranded.desync.void_depth or 250),
+					math.random(-jitter * 100, jitter * 100) / 100
+				)
+			elseif desync_mode == "Sky" then
+				local jitter = Stranded.desync.horizontal_jitter or 0
+				random_offset = Vector3.new(
+					math.random(-jitter * 100, jitter * 100) / 100,
+					math.abs(Stranded.desync.sky_height or 250),
+					math.random(-jitter * 100, jitter * 100) / 100
+				)
+			else
+				local x = math.random(Stranded.desync.min_x * 100, Stranded.desync.max_x * 100) / 100
+				local y = math.random(Stranded.desync.min_y * 100, Stranded.desync.max_y * 100) / 100
+				local z = math.random(Stranded.desync.min_z * 100, Stranded.desync.max_z * 100) / 100
+				random_offset = Vector3.new(x, y, z)
+			end
+			
+			local fake_pos = base_pos + random_offset
 			
 			local rotation = math.random(Stranded.desync.min_rotation, Stranded.desync.max_rotation)
 			local random_rotation = math.rad(rotation)
 			local rotation_cframe = CFrame.Angles(random_rotation, 0, 0)
 			
-			local fake_cframe = CFrame.new(fake_pos) * rotation_cframe * CFrame.Angles(0, self.desync_cache.last_cframe:ToEulerAnglesYXZ(), 0)
+			local _, current_yaw = self.desync_cache.last_cframe:ToEulerAnglesYXZ()
+			local fake_cframe = CFrame.new(fake_pos) * rotation_cframe * CFrame.Angles(0, current_yaw, 0)
 			
 			hrp.CFrame = fake_cframe
 			
@@ -9866,7 +9908,12 @@ do
 				math.random(-100, 100) / 100,
 				math.random(-100, 100) / 100,
 				math.random(-100, 100) / 100
-			).Unit
+			)
+			if random_vel_direction.Magnitude < 0.001 then
+				random_vel_direction = Vector3.new(0, 1, 0)
+			else
+				random_vel_direction = random_vel_direction.Unit
+			end
 			hrp.AssemblyLinearVelocity = random_vel_direction * random_vel_magnitude
 			
 			local rs = self.vars.rs or game:GetService("RunService")
@@ -13230,6 +13277,10 @@ local success_ui, err = pcall(function()
 	TargetStrafeSection:Slider({Name = "Height", Min = -10, Max = 10, Default = Stranded.target_strafe.height, Decimals = 0, Compact = true, Flag = "Target Strafe Height", Callback = function(Value)
 		Stranded.target_strafe.height = Value
 	end})
+
+	TargetStrafeSection:Toggle({Name = "Server Position Strafe", Flag = "Target Strafe Server Only", Default = Stranded.target_strafe.server_only, Callback = function(Value)
+		Stranded.target_strafe.server_only = Value
+	end})
 	
 	local DesyncSection = RageMovementSubTab:Section({Name = "Velocity Desync", Side = 2})
 	
@@ -13248,6 +13299,12 @@ local success_ui, err = pcall(function()
 	
 	DesyncSection:Toggle({Name = "Break Move Direction", Flag = "Desync Break Move Direction", Default = Stranded.desync.break_move_direction, Callback = function(Value)
 		Stranded.desync.break_move_direction = Value
+	end})
+
+	DesyncSection:Dropdown({Name = "Mode", Flag = "Desync Mode", Default = Stranded.desync.mode, Items = {"Random", "Void", "Sky"}, Callback = function(Value)
+		if Value then
+			Stranded.desync.mode = Value
+		end
 	end})
 	
 	DesyncSection:Slider({Name = "Min X", Min = -100, Max = 100, Default = Stranded.desync.min_x, Decimals = 0, Compact = true, Flag = "Desync Min X", Callback = function(Value)
@@ -13272,6 +13329,18 @@ local success_ui, err = pcall(function()
 	
 	DesyncSection:Slider({Name = "Max Z", Min = -100, Max = 100, Default = Stranded.desync.max_z, Decimals = 0, Compact = true, Flag = "Desync Max Z", Callback = function(Value)
 		Stranded.desync.max_z = Value
+	end})
+
+	DesyncSection:Slider({Name = "Void Depth", Min = 25, Max = 1000, Default = Stranded.desync.void_depth, Decimals = 0, Compact = true, Flag = "Desync Void Depth", Callback = function(Value)
+		Stranded.desync.void_depth = Value
+	end})
+
+	DesyncSection:Slider({Name = "Sky Height", Min = 25, Max = 1000, Default = Stranded.desync.sky_height, Decimals = 0, Compact = true, Flag = "Desync Sky Height", Callback = function(Value)
+		Stranded.desync.sky_height = Value
+	end})
+
+	DesyncSection:Slider({Name = "Horizontal Jitter", Min = 0, Max = 100, Default = Stranded.desync.horizontal_jitter, Decimals = 0, Compact = true, Flag = "Desync Horizontal Jitter", Callback = function(Value)
+		Stranded.desync.horizontal_jitter = Value
 	end})
 	
 	DesyncSection:Slider({Name = "Min Rotation", Min = 0, Max = 360, Default = Stranded.desync.min_rotation, Decimals = 0, Compact = true, Flag = "Desync Min Rotation", Callback = function(Value)
