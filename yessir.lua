@@ -4448,7 +4448,6 @@ local Stranded = {
 		jitter_amount = 4,
 		randomize_interval = 0.2,
 		spiral_scale = 1,
-		mobile_support = true,
 		server_only = true,
 	},
 	desync = {
@@ -7760,7 +7759,7 @@ do
 			
 			return self.funcs.get_target_aim_closest_player()
 		end,
-		target_strafe_update = function()
+			target_strafe_update = function()
 			if not Stranded.target_strafe.enabled then
 				return
 			end
@@ -7780,7 +7779,6 @@ do
 			if Library and Library.Flags then
 				hotkey_flag = Library.Flags["Target Strafe Hotkey"]
 			end
-			local mobile_bypass = self.vars.uis.TouchEnabled and not self.vars.uis.KeyboardEnabled and Stranded.target_strafe.mobile_support
 			local should_strafe = false
 			
 			if hotkey_flag then
@@ -7790,10 +7788,6 @@ do
 				elseif mode == "Toggle" then
 					should_strafe = hotkey_flag.Toggled or false
 				elseif mode == "Hold" then
-					if mobile_bypass then
-						should_strafe = true
-					end
-
 					local key_code = hotkey_flag.Key
 					if type(key_code) == "string" then
 						local success, result = pcall(function()
@@ -7818,21 +7812,17 @@ do
 						end
 					end
 					
-					if key_code and not should_strafe then
+					if key_code then
 						should_strafe = self.vars.uis:IsKeyDown(key_code)
 					end
 				end
 			else
-				if mobile_bypass then
-					should_strafe = true
-				else
-					local keybind_str = Stranded.target_strafe.keybind or "E"
-					local success, result = pcall(function()
-						return Enum.KeyCode[keybind_str]
-					end)
-					if success and result then
-						should_strafe = self.vars.uis:IsKeyDown(result)
-					end
+				local keybind_str = Stranded.target_strafe.keybind or "E"
+				local success, result = pcall(function()
+					return Enum.KeyCode[keybind_str]
+				end)
+				if success and result then
+					should_strafe = self.vars.uis:IsKeyDown(result)
 				end
 			end
 			
@@ -13334,7 +13324,7 @@ local success_ui, err = pcall(function()
 		local target_items = {"Auto"}
 		for _, player in ipairs(players_service:GetPlayers()) do
 			if player ~= players_service.LocalPlayer then
-				TableInsert(target_items, player.Name .. " (@" .. (player.DisplayName or player.Name) .. ")")
+				table.insert(target_items, player.Name .. " (@" .. (player.DisplayName or player.Name) .. ")")
 			end
 		end
 
@@ -13394,10 +13384,6 @@ local success_ui, err = pcall(function()
 
 	TargetStrafeSection:Slider({Name = "Spiral Scale", Min = 0.1, Max = 3, Default = Stranded.target_strafe.spiral_scale, Decimals = 2, Compact = true, Flag = "Target Strafe Spiral Scale", Callback = function(Value)
 		Stranded.target_strafe.spiral_scale = Value
-	end})
-
-	TargetStrafeSection:Toggle({Name = "Mobile Keybind Bypass", Flag = "Target Strafe Mobile Support", Default = Stranded.target_strafe.mobile_support, Callback = function(Value)
-		Stranded.target_strafe.mobile_support = Value
 	end})
 
 	TargetStrafeSection:Toggle({Name = "Server Position Strafe", Flag = "Target Strafe Server Only", Default = Stranded.target_strafe.server_only, Callback = function(Value)
