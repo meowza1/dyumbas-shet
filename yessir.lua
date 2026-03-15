@@ -4439,6 +4439,8 @@ local Stranded = {
 	target_strafe = {
 		enabled = false,
 		keybind = "E",
+		mobile_support = false,
+		selected_target = "Auto",
 		type = "Custom",
 		pattern = "Normal",
 		direction = "Clockwise",
@@ -4446,9 +4448,13 @@ local Stranded = {
 		height = 10,
 		distance = 10,
 		vertical_jitter = 0,
+		radius_jitter = 0,
+		sway_amount = 0,
 		jitter_amount = 4,
 		randomize_interval = 0.2,
 		spiral_scale = 1,
+		dash_interval = 0.2,
+		dash_distance = 5,
 		server_only = true,
 	},
 	desync = {
@@ -4469,6 +4475,11 @@ local Stranded = {
 		jitter_strength = 15,
 		circle_radius = 12,
 		circle_speed = 8,
+		helix_height = 18,
+		helix_speed = 7,
+		pulse_strength = 12,
+		teleport_radius = 45,
+		teleport_interval = 0.3,
 		yaw_spin_speed = 180,
 		desync_interval = 0.05,
 		velocity_scale = 1,
@@ -7788,7 +7799,9 @@ do
 			end
 			local should_strafe = false
 			
-			if hotkey_flag then
+			if Stranded.target_strafe.mobile_support and self.vars.uis.TouchEnabled and not self.vars.uis.KeyboardEnabled then
+				should_strafe = true
+			elseif hotkey_flag then
 				local mode = hotkey_flag.Mode or "Hold"
 				if mode == "Always" then
 					should_strafe = true
@@ -7874,7 +7887,26 @@ do
 			end
 			
 			if not target_part then
-				if Script and Script.Targeting and Script.Targeting.Target then
+				local selected_target = Stranded.target_strafe.selected_target
+				if type(selected_target) == "string" and selected_target ~= "" and selected_target ~= "Auto" then
+					local selected_lower = string.lower(selected_target)
+					for _, player in ipairs(self.vars.players:GetPlayers()) do
+						if player ~= self.vars.local_player then
+							local username = string.lower(player.Name or "")
+							local display_name = string.lower(player.DisplayName or "")
+							local label = string.lower((player.Name or "") .. " (@" .. (player.DisplayName or "") .. ")")
+							if username == selected_lower or display_name == selected_lower or label == selected_lower then
+								target_player = player
+								if target_player.Character then
+									target_part = target_player.Character:FindFirstChild("HumanoidRootPart") or target_player.Character:FindFirstChild("Head")
+								end
+								break
+							end
+						end
+					end
+				end
+
+				if not target_part and Script and Script.Targeting and Script.Targeting.Target then
 					target_player = Script.Targeting.Target
 					if target_player and target_player.Character then
 						target_part = target_player.Character:FindFirstChild("HumanoidRootPart") or target_player.Character:FindFirstChild("Head")
@@ -7961,6 +7993,10 @@ do
 			local jitter_amount = Stranded.target_strafe.jitter_amount or 0
 			local randomize_interval = math.max(Stranded.target_strafe.randomize_interval or 0.2, 0.05)
 			local spiral_scale = Stranded.target_strafe.spiral_scale or 1
+			local radius_jitter = Stranded.target_strafe.radius_jitter or 0
+			local sway_amount = Stranded.target_strafe.sway_amount or 0
+			local dash_interval = math.max(Stranded.target_strafe.dash_interval or 0.2, 0.05)
+			local dash_distance = Stranded.target_strafe.dash_distance or 5
 			
 			if strafe_type == "Random" then
 				local next_randomize = self.target_strafe_cache.next_randomize or 0
@@ -8038,8 +8074,27 @@ do
 				horizontal_offset_x = math.cos(time) * dynamic_radius
 				horizontal_offset_z = math.sin(time) * dynamic_radius
 				vertical_offset_y = strafe_height
+			elseif pattern == "Dash" then
+				local next_dash = self.target_strafe_cache.next_dash or 0
+				if current_time >= next_dash then
+					self.target_strafe_cache.next_dash = current_time + dash_interval
+					self.target_strafe_cache.dash_dir = math.random(0, 1) == 1 and 1 or -1
+				end
+				local dash_dir = self.target_strafe_cache.dash_dir or 1
+				horizontal_offset_x = dash_distance * dash_dir
+				horizontal_offset_z = math.sin(current_time * strafe_speed) * (strafe_radius * 0.4)
+				vertical_offset_y = strafe_height
+			elseif pattern == "Sway" then
+				local time = tick() * strafe_speed * direction_mul
+				horizontal_offset_x = math.cos(time) * strafe_radius
+				horizontal_offset_z = math.sin(time) * strafe_radius
+				vertical_offset_y = strafe_height + math.sin(time * 2) * sway_amount
 			end
 
+			if radius_jitter > 0 then
+				horizontal_offset_x = horizontal_offset_x + (math.random(-radius_jitter * 100, radius_jitter * 100) / 100)
+				horizontal_offset_z = horizontal_offset_z + (math.random(-radius_jitter * 100, radius_jitter * 100) / 100)
+			end
 			if vertical_jitter > 0 then
 				vertical_offset_y = vertical_offset_y + (math.random(-vertical_jitter * 100, vertical_jitter * 100) / 100)
 			end
@@ -9974,6 +10029,29 @@ do
 				local z = math.random(Stranded.desync.min_z * 100, Stranded.desync.max_z * 100) / 100
 				random_offset = Vector3.new(x, y, z)
 				yaw_offset = math.rad((current_time * (Stranded.desync.yaw_spin_speed or 180)) % 360)
+			elseif desync_mode == "Helix" then
+				local helix_height = math.max(Stranded.desync.helix_height or 18, 1)
+				local helix_speed = math.max(Stranded.desync.helix_speed or 7, 0.1)
+				local circle_radius = math.max(Stranded.desync.circle_radius or 12, 1)
+				local angle = current_time * helix_speed
+				random_offset = Vector3.new(math.cos(angle) * circle_radius, math.sin(angle * 1.5) * helix_height, math.sin(angle) * circle_radius)
+				yaw_offset = angle
+			elseif desync_mode == "Pulse" then
+				local pulse_strength = math.max(Stranded.desync.pulse_strength or 12, 1)
+				local pulse = (math.sin(current_time * math.max(Stranded.desync.circle_speed or 8, 0.1)) + 1) * 0.5
+				local x = math.random(Stranded.desync.min_x * 100, Stranded.desync.max_x * 100) / 100
+				local z = math.random(Stranded.desync.min_z * 100, Stranded.desync.max_z * 100) / 100
+				random_offset = Vector3.new(x * pulse_strength * pulse, 0, z * pulse_strength * pulse)
+			elseif desync_mode == "Teleport" then
+				local teleport_interval = math.max(Stranded.desync.teleport_interval or 0.3, 0.05)
+				local teleport_radius = math.max(Stranded.desync.teleport_radius or 45, 1)
+				local next_teleport = self.desync_cache.next_teleport or 0
+				if current_time >= next_teleport then
+					local angle = math.random() * math.pi * 2
+					self.desync_cache.teleport_offset = Vector3.new(math.cos(angle) * teleport_radius, math.random(Stranded.desync.min_y, Stranded.desync.max_y), math.sin(angle) * teleport_radius)
+					self.desync_cache.next_teleport = current_time + teleport_interval
+				end
+				random_offset = self.desync_cache.teleport_offset or Vector3.new(0, 0, 0)
 			else
 				local x = math.random(Stranded.desync.min_x * 100, Stranded.desync.max_x * 100) / 100
 				local y = math.random(Stranded.desync.min_y * 100, Stranded.desync.max_y * 100) / 100
@@ -9998,10 +10076,12 @@ do
 				math.random(-100, 100) / 100,
 				math.random(-100, 100) / 100
 			)
-			if desync_mode == "Circle" then
+			if desync_mode == "Circle" or desync_mode == "Helix" then
 				local circle_speed = math.max(Stranded.desync.circle_speed or 8, 0.1)
 				local angle = current_time * circle_speed
 				random_vel_direction = Vector3.new(-math.sin(angle), 0, math.cos(angle))
+			elseif desync_mode == "Pulse" then
+				random_vel_direction = Vector3.new(0, 1, 0)
 			end
 			if random_vel_direction.Magnitude < 0.001 then
 				random_vel_direction = Vector3.new(0, 1, 0)
@@ -12305,10 +12385,12 @@ local success_ui, err = pcall(function()
 			end
 			
 			Library:Connect(Players.PlayerAdded, function(player)
+				if not player then return end
 				create_player(player)
 			end, "Playerlist PlayerAdded")
 			
 			Library:Connect(Players.PlayerRemoving, function(player)
+				if not player then return end
 				remove_player(player)
 			end, "Playerlist PlayerRemoving")
 			
@@ -13348,13 +13430,51 @@ local success_ui, err = pcall(function()
 		end
 	end
 
+	local target_strafe_target_dropdown
+	local function refresh_target_strafe_targets()
+		local items = {"Auto"}
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= Players.LocalPlayer then
+				table.insert(items, (player.Name or "Unknown") .. " (@" .. (player.DisplayName or player.Name or "Unknown") .. ")")
+			end
+		end
+		if target_strafe_target_dropdown and target_strafe_target_dropdown.Refresh then
+			pcall(function()
+				target_strafe_target_dropdown:Refresh(items)
+			end)
+		end
+		if type(Stranded.target_strafe.selected_target) ~= "string" or not table.find(items, Stranded.target_strafe.selected_target) then
+			Stranded.target_strafe.selected_target = "Auto"
+		end
+	end
+
+	target_strafe_target_dropdown = TargetStrafeSection:Dropdown({Name = "Target", Flag = "Target Strafe Selected Target", Default = Stranded.target_strafe.selected_target, Items = {"Auto"}, Callback = function(Value)
+		if Value then
+			Stranded.target_strafe.selected_target = Value
+		end
+	end})
+
+	TargetStrafeSection:Button({Name = "Refresh Target List", Callback = function()
+		refresh_target_strafe_targets()
+	end})
+
+	Library:Connect(Players.PlayerAdded, function()
+		refresh_target_strafe_targets()
+	end, "Target Strafe Target Added")
+
+	Library:Connect(Players.PlayerRemoving, function()
+		refresh_target_strafe_targets()
+	end, "Target Strafe Target Removed")
+
+	refresh_target_strafe_targets()
+
 	TargetStrafeSection:Dropdown({Name = "Type", Flag = "Target Strafe Type", Default = Stranded.target_strafe.type, Items = {"Custom", "Random"}, Callback = function(Value)
 		if Value then
 			Stranded.target_strafe.type = Value
 		end
 	end})
 
-	TargetStrafeSection:Dropdown({Name = "Pattern", Flag = "Target Strafe Pattern", Default = Stranded.target_strafe.pattern, Items = {"Normal", "Trigonometric", "Elliptical", "Figure-8", "Jitter", "Spiral", "Randomized", "Wave", "Pulse"}, Callback = function(Value)
+	TargetStrafeSection:Dropdown({Name = "Pattern", Flag = "Target Strafe Pattern", Default = Stranded.target_strafe.pattern, Items = {"Normal", "Trigonometric", "Elliptical", "Figure-8", "Jitter", "Spiral", "Randomized", "Wave", "Pulse", "Dash", "Sway"}, Callback = function(Value)
 		if Value then
 			Stranded.target_strafe.pattern = Value
 		end
@@ -13386,12 +13506,32 @@ local success_ui, err = pcall(function()
 		Stranded.target_strafe.jitter_amount = Value
 	end})
 
+	TargetStrafeSection:Slider({Name = "Radius Jitter", Min = 0, Max = 20, Default = Stranded.target_strafe.radius_jitter, Decimals = 0, Compact = true, Flag = "Target Strafe Radius Jitter", Callback = function(Value)
+		Stranded.target_strafe.radius_jitter = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Sway Amount", Min = 0, Max = 20, Default = Stranded.target_strafe.sway_amount, Decimals = 0, Compact = true, Flag = "Target Strafe Sway Amount", Callback = function(Value)
+		Stranded.target_strafe.sway_amount = Value
+	end})
+
 	TargetStrafeSection:Slider({Name = "Randomize Interval", Min = 0.05, Max = 1, Default = Stranded.target_strafe.randomize_interval, Decimals = 2, Compact = true, Flag = "Target Strafe Randomize Interval", Callback = function(Value)
 		Stranded.target_strafe.randomize_interval = Value
 	end})
 
 	TargetStrafeSection:Slider({Name = "Spiral Scale", Min = 0.1, Max = 3, Default = Stranded.target_strafe.spiral_scale, Decimals = 2, Compact = true, Flag = "Target Strafe Spiral Scale", Callback = function(Value)
 		Stranded.target_strafe.spiral_scale = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Dash Interval", Min = 0.05, Max = 1, Default = Stranded.target_strafe.dash_interval, Decimals = 2, Compact = true, Flag = "Target Strafe Dash Interval", Callback = function(Value)
+		Stranded.target_strafe.dash_interval = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Dash Distance", Min = 1, Max = 30, Default = Stranded.target_strafe.dash_distance, Decimals = 0, Compact = true, Flag = "Target Strafe Dash Distance", Callback = function(Value)
+		Stranded.target_strafe.dash_distance = Value
+	end})
+
+	TargetStrafeSection:Toggle({Name = "Mobile Keybind Bypass", Flag = "Target Strafe Mobile Support", Default = Stranded.target_strafe.mobile_support, Callback = function(Value)
+		Stranded.target_strafe.mobile_support = Value
 	end})
 
 	TargetStrafeSection:Toggle({Name = "Server Position Strafe", Flag = "Target Strafe Server Only", Default = Stranded.target_strafe.server_only, Callback = function(Value)
@@ -13417,7 +13557,7 @@ local success_ui, err = pcall(function()
 		Stranded.desync.break_move_direction = Value
 	end})
 
-	DesyncSection:Dropdown({Name = "Mode", Flag = "Desync Mode", Default = Stranded.desync.mode, Items = {"Random", "Void", "Sky", "Jitter", "Circle", "Spin"}, Callback = function(Value)
+	DesyncSection:Dropdown({Name = "Mode", Flag = "Desync Mode", Default = Stranded.desync.mode, Items = {"Random", "Void", "Sky", "Jitter", "Circle", "Spin", "Helix", "Pulse", "Teleport"}, Callback = function(Value)
 		if Value then
 			Stranded.desync.mode = Value
 		end
@@ -13469,6 +13609,26 @@ local success_ui, err = pcall(function()
 
 	DesyncSection:Slider({Name = "Circle Speed", Min = 1, Max = 50, Default = Stranded.desync.circle_speed, Decimals = 0, Compact = true, Flag = "Desync Circle Speed", Callback = function(Value)
 		Stranded.desync.circle_speed = Value
+	end})
+
+	DesyncSection:Slider({Name = "Helix Height", Min = 1, Max = 100, Default = Stranded.desync.helix_height, Decimals = 0, Compact = true, Flag = "Desync Helix Height", Callback = function(Value)
+		Stranded.desync.helix_height = Value
+	end})
+
+	DesyncSection:Slider({Name = "Helix Speed", Min = 1, Max = 50, Default = Stranded.desync.helix_speed, Decimals = 0, Compact = true, Flag = "Desync Helix Speed", Callback = function(Value)
+		Stranded.desync.helix_speed = Value
+	end})
+
+	DesyncSection:Slider({Name = "Pulse Strength", Min = 1, Max = 100, Default = Stranded.desync.pulse_strength, Decimals = 0, Compact = true, Flag = "Desync Pulse Strength", Callback = function(Value)
+		Stranded.desync.pulse_strength = Value
+	end})
+
+	DesyncSection:Slider({Name = "Teleport Radius", Min = 1, Max = 200, Default = Stranded.desync.teleport_radius, Decimals = 0, Compact = true, Flag = "Desync Teleport Radius", Callback = function(Value)
+		Stranded.desync.teleport_radius = Value
+	end})
+
+	DesyncSection:Slider({Name = "Teleport Interval", Min = 0.05, Max = 1, Default = Stranded.desync.teleport_interval, Decimals = 2, Compact = true, Flag = "Desync Teleport Interval", Callback = function(Value)
+		Stranded.desync.teleport_interval = Value
 	end})
 
 	DesyncSection:Slider({Name = "Spin Speed", Min = 1, Max = 1000, Default = Stranded.desync.yaw_spin_speed, Decimals = 0, Compact = true, Flag = "Desync Spin Speed", Callback = function(Value)
