@@ -4439,11 +4439,16 @@ local Stranded = {
 	target_strafe = {
 		enabled = false,
 		keybind = "E",
+		selected_target = "Auto",
 		type = "Custom",
 		pattern = "Normal",
 		speed = 10,
 		height = 10,
 		distance = 10,
+		jitter_amount = 4,
+		randomize_interval = 0.2,
+		spiral_scale = 1,
+		mobile_support = true,
 		server_only = true,
 	},
 	desync = {
@@ -7775,6 +7780,7 @@ do
 			if Library and Library.Flags then
 				hotkey_flag = Library.Flags["Target Strafe Hotkey"]
 			end
+			local mobile_bypass = self.vars.uis.TouchEnabled and not self.vars.uis.KeyboardEnabled and Stranded.target_strafe.mobile_support
 			local should_strafe = false
 			
 			if hotkey_flag then
@@ -7784,6 +7790,10 @@ do
 				elseif mode == "Toggle" then
 					should_strafe = hotkey_flag.Toggled or false
 				elseif mode == "Hold" then
+					if mobile_bypass then
+						should_strafe = true
+					end
+
 					local key_code = hotkey_flag.Key
 					if type(key_code) == "string" then
 						local success, result = pcall(function()
@@ -7808,17 +7818,21 @@ do
 						end
 					end
 					
-					if key_code then
+					if key_code and not should_strafe then
 						should_strafe = self.vars.uis:IsKeyDown(key_code)
 					end
 				end
 			else
-				local keybind_str = Stranded.target_strafe.keybind or "E"
-				local success, result = pcall(function()
-					return Enum.KeyCode[keybind_str]
-				end)
-				if success and result then
-					should_strafe = self.vars.uis:IsKeyDown(result)
+				if mobile_bypass then
+					should_strafe = true
+				else
+					local keybind_str = Stranded.target_strafe.keybind or "E"
+					local success, result = pcall(function()
+						return Enum.KeyCode[keybind_str]
+					end)
+					if success and result then
+						should_strafe = self.vars.uis:IsKeyDown(result)
+					end
 				end
 			end
 			
@@ -7862,6 +7876,28 @@ do
 				end
 			end
 			
+			if not target_part then
+				local selected_target = Stranded.target_strafe.selected_target or "Auto"
+				if selected_target ~= "Auto" then
+					local selected_target_lower = string.lower(selected_target)
+					for _, player in ipairs(self.vars.players:GetPlayers()) do
+						if player ~= self.vars.local_player then
+							local display_name = player.DisplayName or player.Name
+							local combined_name = string.lower(player.Name .. " (@" .. display_name .. ")")
+							if string.lower(player.Name) == selected_target_lower
+								or string.lower(display_name) == selected_target_lower
+								or combined_name == selected_target_lower then
+								target_player = player
+								if player.Character then
+									target_part = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Head")
+								end
+								break
+							end
+						end
+					end
+				end
+			end
+
 			if not target_part then
 				if Script and Script.Targeting and Script.Targeting.Target then
 					target_player = Script.Targeting.Target
@@ -7944,15 +7980,26 @@ do
 			local strafe_speed = Stranded.target_strafe.speed or 10
 			local strafe_height = Stranded.target_strafe.height or 10
 			local strafe_radius = Stranded.target_strafe.distance or 10
+			local jitter_amount = Stranded.target_strafe.jitter_amount or 0
+			local randomize_interval = math.max(Stranded.target_strafe.randomize_interval or 0.2, 0.05)
+			local spiral_scale = Stranded.target_strafe.spiral_scale or 1
 			
 			if strafe_type == "Random" then
-				local max_speed = Stranded.target_strafe.speed or 10
-				local max_height = Stranded.target_strafe.height or 10
-				local max_distance = Stranded.target_strafe.distance or 10
-				
-				strafe_speed = math.random(1, max_speed)
-				strafe_height = math.random(1, max_height)
-				strafe_radius = math.random(1, max_distance)
+				local next_randomize = self.target_strafe_cache.next_randomize or 0
+				if current_time >= next_randomize then
+					local max_speed = math.max(Stranded.target_strafe.speed or 10, 1)
+					local max_height = math.max(math.abs(Stranded.target_strafe.height or 10), 1)
+					local max_distance = math.max(Stranded.target_strafe.distance or 10, 1)
+					
+					self.target_strafe_cache.random_speed = math.random(1, max_speed)
+					self.target_strafe_cache.random_height = math.random(-max_height, max_height)
+					self.target_strafe_cache.random_radius = math.random(1, max_distance)
+					self.target_strafe_cache.next_randomize = current_time + randomize_interval
+				end
+
+				strafe_speed = self.target_strafe_cache.random_speed or strafe_speed
+				strafe_height = self.target_strafe_cache.random_height or strafe_height
+				strafe_radius = self.target_strafe_cache.random_radius or strafe_radius
 			end
 			
 			local target_position = target_part.Position
@@ -7985,6 +8032,22 @@ do
 				horizontal_offset_x = math.sin(rotation_time) * strafe_radius
 				horizontal_offset_z = math.sin(rotation_time * 2) * strafe_radius * 0.5
 				vertical_offset_y = math.cos(rotation_time) * strafe_height * 0.3 + strafe_height
+			elseif pattern == "Jitter" then
+				local time = tick() * strafe_speed
+				horizontal_offset_x = math.cos(time) * strafe_radius + math.random(-jitter_amount * 100, jitter_amount * 100) / 100
+				horizontal_offset_z = math.sin(time) * strafe_radius + math.random(-jitter_amount * 100, jitter_amount * 100) / 100
+				vertical_offset_y = strafe_height + math.random(-jitter_amount * 100, jitter_amount * 100) / 100
+			elseif pattern == "Spiral" then
+				self.target_strafe_cache.rotation_angle = (self.target_strafe_cache.rotation_angle + (delta_time * strafe_speed * 0.5)) % (math.pi * 2)
+				local rotation_time = self.target_strafe_cache.rotation_angle
+				local dynamic_radius = strafe_radius + math.sin(rotation_time * 0.5) * spiral_scale * strafe_radius
+				horizontal_offset_x = math.cos(rotation_time) * dynamic_radius
+				horizontal_offset_z = math.sin(rotation_time) * dynamic_radius
+				vertical_offset_y = math.sin(rotation_time) * (strafe_height * 0.5)
+			elseif pattern == "Randomized" then
+				horizontal_offset_x = math.random(-strafe_radius * 100, strafe_radius * 100) / 100
+				horizontal_offset_z = math.random(-strafe_radius * 100, strafe_radius * 100) / 100
+				vertical_offset_y = math.random(-math.abs(strafe_height) * 100, math.abs(strafe_height) * 100) / 100
 			end
 			
 			local orbit_position = target_position + Vector3.new(horizontal_offset_x, vertical_offset_y, horizontal_offset_z)
@@ -13253,14 +13316,41 @@ local success_ui, err = pcall(function()
 		target_strafe_keybind.OnModeChange = function(mode)
 		end
 	end
-	
+
+	local target_strafe_target_dropdown = TargetStrafeSection:Dropdown({Name = "Target", Flag = "Target Strafe Selected Target", Default = Stranded.target_strafe.selected_target or "Auto", Items = {"Auto"}, Callback = function(Value)
+		if Value then
+			Stranded.target_strafe.selected_target = Value
+		end
+	end})
+
+	local refresh_target_strafe_targets = function()
+		local target_items = {"Auto"}
+		for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+			if player ~= game:GetService("Players").LocalPlayer then
+				table.insert(target_items, player.Name .. " (@" .. (player.DisplayName or player.Name) .. ")")
+			end
+		end
+
+		if target_strafe_target_dropdown and target_strafe_target_dropdown.Refresh then
+			target_strafe_target_dropdown:Refresh(target_items)
+		end
+	end
+
+	refresh_target_strafe_targets()
+	game:GetService("Players").PlayerAdded:Connect(refresh_target_strafe_targets)
+	game:GetService("Players").PlayerRemoving:Connect(refresh_target_strafe_targets)
+
+	TargetStrafeSection:Button({Name = "Refresh Target List", Callback = function()
+		refresh_target_strafe_targets()
+	end})
+
 	TargetStrafeSection:Dropdown({Name = "Type", Flag = "Target Strafe Type", Default = Stranded.target_strafe.type, Items = {"Custom", "Random"}, Callback = function(Value)
 		if Value then
 			Stranded.target_strafe.type = Value
 		end
 	end})
-	
-	TargetStrafeSection:Dropdown({Name = "Pattern", Flag = "Target Strafe Pattern", Default = Stranded.target_strafe.pattern, Items = {"Normal", "Trigonometric", "Elliptical", "Figure-8"}, Callback = function(Value)
+
+	TargetStrafeSection:Dropdown({Name = "Pattern", Flag = "Target Strafe Pattern", Default = Stranded.target_strafe.pattern, Items = {"Normal", "Trigonometric", "Elliptical", "Figure-8", "Jitter", "Spiral", "Randomized"}, Callback = function(Value)
 		if Value then
 			Stranded.target_strafe.pattern = Value
 		end
@@ -13276,6 +13366,22 @@ local success_ui, err = pcall(function()
 	
 	TargetStrafeSection:Slider({Name = "Height", Min = -10, Max = 10, Default = Stranded.target_strafe.height, Decimals = 0, Compact = true, Flag = "Target Strafe Height", Callback = function(Value)
 		Stranded.target_strafe.height = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Jitter Amount", Min = 0, Max = 25, Default = Stranded.target_strafe.jitter_amount, Decimals = 0, Compact = true, Flag = "Target Strafe Jitter Amount", Callback = function(Value)
+		Stranded.target_strafe.jitter_amount = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Randomize Interval", Min = 0.05, Max = 1, Default = Stranded.target_strafe.randomize_interval, Decimals = 2, Compact = true, Flag = "Target Strafe Randomize Interval", Callback = function(Value)
+		Stranded.target_strafe.randomize_interval = Value
+	end})
+
+	TargetStrafeSection:Slider({Name = "Spiral Scale", Min = 0.1, Max = 3, Default = Stranded.target_strafe.spiral_scale, Decimals = 2, Compact = true, Flag = "Target Strafe Spiral Scale", Callback = function(Value)
+		Stranded.target_strafe.spiral_scale = Value
+	end})
+
+	TargetStrafeSection:Toggle({Name = "Mobile Keybind Bypass", Flag = "Target Strafe Mobile Support", Default = Stranded.target_strafe.mobile_support, Callback = function(Value)
+		Stranded.target_strafe.mobile_support = Value
 	end})
 
 	TargetStrafeSection:Toggle({Name = "Server Position Strafe", Flag = "Target Strafe Server Only", Default = Stranded.target_strafe.server_only, Callback = function(Value)
