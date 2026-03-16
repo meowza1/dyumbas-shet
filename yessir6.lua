@@ -59,9 +59,9 @@ local Library do
         gethui = gethui or function()
                 return CoreGui
         end
-        local LocalPlayer = Players.LocalPlayer
-        local Camera = Workspace.CurrentCamera
-        local Mouse = LocalPlayer:GetMouse()
+        local LocalPlayer = Players.LocalPlayer or { GetMouse = function() return { X = 0, Y = 0 } end }
+        local Camera = Workspace.CurrentCamera or { ViewportSize = Vector2.new(1920, 1080) }
+        local Mouse = (LocalPlayer and LocalPlayer.GetMouse and LocalPlayer:GetMouse()) or { X = 0, Y = 0 }
         local FromRGB = Color3.fromRGB
         local FromHSV = Color3.fromHSV
         local FromHex = Color3.fromHex
@@ -695,8 +695,13 @@ local Library do
         Library.IsMouseOverFrame = function(self, Frame)
                 Frame = Frame.Instance
                 local MousePosition = Vector2New(Mouse.X, Mouse.Y)
-                return MousePosition.X >= Frame.AbsolutePosition.X and MousePosition.X <= Frame.AbsolutePosition.X + Frame.AbsoluteSize.X 
-                and MousePosition.Y >= Frame.AbsolutePosition.Y and MousePosition.Y <= Frame.AbsolutePosition.Y + Frame.AbsoluteSize.Y
+                local absPos = Frame.AbsolutePosition
+                local absSize = Frame.AbsoluteSize
+                if not absPos or not absSize then
+                        return false
+                end
+                return MousePosition.X >= absPos.X and MousePosition.X <= absPos.X + absSize.X 
+                and MousePosition.Y >= absPos.Y and MousePosition.Y <= absPos.Y + absSize.Y
         end
         Library.Watermark = function(self, Name)
                 local Watermark = { } 
@@ -1041,7 +1046,7 @@ local Library do
                         Colorpicker.CalculateCount = function(self, Index, YScale, YOffset)
                                 local MaxButtonsAdded = 5
                                 local Column = Index % MaxButtonsAdded
-                                local ButtonSize = Items["ColorpickerButton"].Instance.AbsoluteSize
+                                local ButtonSize = Items["ColorpickerButton"].Instance.AbsoluteSize or Vector2.new(20, 10)
                                 local Spacing = 4
                                 local XPosition = (ButtonSize.X + Spacing) * Column - Spacing - 21
                                 Items["ColorpickerButton"].Instance.Position = UDim2New(1, -XPosition, YScale or 0.5, YOffset or 0)
@@ -1309,10 +1314,14 @@ local Library do
                                         end
                                 end
                         end
-                        Library:Connect(NewTween.Tween.Completed, function()
+                        if NewTween and NewTween.Tween then
+                                Library:Connect(NewTween.Tween.Completed, function()
+                                        Debounce = false
+                                        Items["ColorpickerWindow"].Instance.Visible = Bool
+                                end)
+                        else
                                 Debounce = false
-                                Items["ColorpickerWindow"].Instance.Visible = Bool
-                        end)
+                        end
                 end
                 function Colorpicker:Get()
                         return Colorpicker.Value
@@ -1366,12 +1375,18 @@ local Library do
                         if not Input or not SlidingPalette then 
                                 return
                         end
-                        local ValueX = MathClamp(1 - (Input.Position.X - Items["Palette"].Instance.AbsolutePosition.X) / Items["Palette"].Instance.AbsoluteSize.X, 0, 1)
-                        local ValueY = MathClamp(1 - (Input.Position.Y - Items["Palette"].Instance.AbsolutePosition.Y) / Items["Palette"].Instance.AbsoluteSize.Y, 0, 1)
+                        local palette = Items["Palette"].Instance
+                        local absPos = palette.AbsolutePosition
+                        local absSize = palette.AbsoluteSize
+                        if not absPos or not absSize then
+                                return
+                        end
+                        local ValueX = MathClamp(1 - (Input.Position.X - absPos.X) / absSize.X, 0, 1)
+                        local ValueY = MathClamp(1 - (Input.Position.Y - absPos.Y) / absSize.Y, 0, 1)
                         self.Saturation = ValueX
                         self.Value = ValueY
-                        local SlideX = MathClamp((Input.Position.X - Items["Palette"].Instance.AbsolutePosition.X) / Items["Palette"].Instance.AbsoluteSize.X, 0, 0.989)
-                        local SlideY = MathClamp((Input.Position.Y - Items["Palette"].Instance.AbsolutePosition.Y) / Items["Palette"].Instance.AbsoluteSize.Y, 0, 0.989)
+                        local SlideX = MathClamp((Input.Position.X - absPos.X) / absSize.X, 0, 0.989)
+                        local SlideY = MathClamp((Input.Position.Y - absPos.Y) / absSize.Y, 0, 0.989)
                         Items["PaletteDragger"]:Tween(TweenInfo.new(0.17, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2New(SlideX, 0, SlideY, 0)})
                         self:Update()            
                 end
@@ -1379,9 +1394,15 @@ local Library do
                         if not Input or not SlidingHue then 
                                 return
                         end
-                        local ValueY = MathClamp((Input.Position.Y - Items["Hue"].Instance.AbsolutePosition.Y) / Items["Hue"].Instance.AbsoluteSize.Y, 0, 1)
+                        local hue = Items["Hue"].Instance
+                        local absPos = hue.AbsolutePosition
+                        local absSize = hue.AbsoluteSize
+                        if not absPos or not absSize then
+                                return
+                        end
+                        local ValueY = MathClamp((Input.Position.Y - absPos.Y) / absSize.Y, 0, 1)
                         self.Hue = ValueY
-                        local PositionY = MathClamp((Input.Position.Y - Items["Hue"].Instance.AbsolutePosition.Y) / Items["Hue"].Instance.AbsoluteSize.Y, 0, 0.994)
+                        local PositionY = MathClamp((Input.Position.Y - absPos.Y) / absSize.Y, 0, 0.994)
                         Items["HueDragger"]:Tween(TweenInfo.new(0.17, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2New(0, 0, PositionY, 0)})
                         self:Update()
                 end
@@ -1389,9 +1410,15 @@ local Library do
                         if not Input or not SlidingAlpha then 
                                 return
                         end
-                        local ValueX = MathClamp((Input.Position.X - Items["Alpha"].Instance.AbsolutePosition.X) / Items["Alpha"].Instance.AbsoluteSize.X, 0, 1)
+                        local alpha = Items["Alpha"].Instance
+                        local absPos = alpha.AbsolutePosition
+                        local absSize = alpha.AbsoluteSize
+                        if not absPos or not absSize then
+                                return
+                        end
+                        local ValueX = MathClamp((Input.Position.X - absPos.X) / absSize.X, 0, 1)
                         self.Alpha = ValueX
-                        local PositionX = MathClamp((Input.Position.X - Items["Alpha"].Instance.AbsolutePosition.X) / Items["Alpha"].Instance.AbsoluteSize.X, 0, 0.994)
+                        local PositionX = MathClamp((Input.Position.X - absPos.X) / absSize.X, 0, 0.994)
                         Items["AlphaDragger"]:Tween(TweenInfo.new(0.17, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2New(PositionX, 0, 0, 0)})
                         self:Update(true)
                 end
@@ -1694,7 +1721,8 @@ local Library do
                         Keybind.Picking = false
                         Items["Text"]:Tween(nil, {TextColor3 = Library.Theme.Text})
                         Items["Text"]:ChangeItemTheme({TextColor3 = "Text"})
-                        Items["Text"].Instance.Size = UDim2New(0, Items["Text"].Instance.TextBounds.X, 1, 1)
+                        local textBoundsX = Items["Text"].Instance.TextBounds and Items["Text"].Instance.TextBounds.X or 0
+                        Items["Text"].Instance.Size = UDim2New(0, textBoundsX, 1, 1)
                         Update()
                 end
                 function Keybind:SetMode(Mode)
@@ -2333,10 +2361,14 @@ local Library do
                                         end
                                 end
                         end
-                        Library:Connect(NewTween.Tween.Completed, function()
+                        if NewTween and NewTween.Tween then
+                                Library:Connect(NewTween.Tween.Completed, function()
+                                        Debounce = false
+                                        Items["Subtab"].Instance.Visible = Bool
+                                end)
+                        else
                                 Debounce = false
-                                Items["Subtab"].Instance.Visible = Bool
-                        end)
+                        end
                 end
                 Items["Inactive"]:Connect("MouseButton1Down", function()
                         for Index, Value in SubPage.Window.SubPages do
@@ -2635,10 +2667,14 @@ local Library do
                                                 end
                                         end
                                 end
-                                Library:Connect(NewTween.Tween.Completed, function()
+                                if NewTween and NewTween.Tween then
+                                        Library:Connect(NewTween.Tween.Completed, function()
+                                                Debounce = false
+                                                SubItems["Content"].Instance.Visible = Bool
+                                        end)
+                                else
                                         Debounce = false
-                                        SubItems["Content"].Instance.Visible = Bool
-                                end)
+                                end
                         end
                         SubItems["Inactive"]:Connect("MouseButton1Down", function()
                                 for Index, Value in MultiSection.SectionContents do
@@ -2976,9 +3012,11 @@ local Library do
                 Items["RealSlider"]:Connect("MouseButton1Down", function()
                         Slider.Sliding = true
                         local MousePos = UserInputService:GetMouseLocation()
-                        local sliderSize = Items["RealSlider"].Instance.AbsoluteSize.X
-                        if sliderSize > 0 then
-                                local SizeX = math.clamp((MousePos.X - Items["RealSlider"].Instance.AbsolutePosition.X) / sliderSize, 0, 1)
+                        local realSlider = Items["RealSlider"].Instance
+                        local sliderSize = realSlider.AbsoluteSize and realSlider.AbsoluteSize.X or 0
+                        local absPos = realSlider.AbsolutePosition
+                        if sliderSize > 0 and absPos then
+                                local SizeX = math.clamp((MousePos.X - absPos.X) / sliderSize, 0, 1)
                                 local range = Slider.Max - Slider.Min
                                 local Value = (range * SizeX) + Slider.Min
                                 Slider:Set(Value)
@@ -2992,9 +3030,11 @@ local Library do
                 Library:Connect(UserInputService.InputChanged, function(Input)
                         if Input.UserInputType == Enum.UserInputType.MouseMovement and Slider.Sliding then
                                 local MousePos = UserInputService:GetMouseLocation()
-                                local sliderSize = Items["RealSlider"].Instance.AbsoluteSize.X
-                                if sliderSize > 0 then
-                                        local SizeX = math.clamp((MousePos.X - Items["RealSlider"].Instance.AbsolutePosition.X) / sliderSize, 0, 1)
+                                local realSlider = Items["RealSlider"].Instance
+                                local sliderSize = realSlider.AbsoluteSize and realSlider.AbsoluteSize.X or 0
+                                local absPos = realSlider.AbsolutePosition
+                                if sliderSize > 0 and absPos then
+                                        local SizeX = math.clamp((MousePos.X - absPos.X) / sliderSize, 0, 1)
                                         local range = Slider.Max - Slider.Min
                                         local Value = (range * SizeX) + Slider.Min
                                         Slider:Set(Value)
@@ -3642,11 +3682,17 @@ local Library do
                                         end
                                 end
                         end
-                        Library:Connect(NewTween.Tween.Completed, function()
+                        if NewTween and NewTween.Tween then
+                                Library:Connect(NewTween.Tween.Completed, function()
+                                        Debounce = false
+                                        Items["OptionHolder"].Instance.Visible = Bool
+                                        Items["OptionHolder"].Instance.ZIndex = Bool and 15 or 1
+                                end)
+                        else
                                 Debounce = false
                                 Items["OptionHolder"].Instance.Visible = Bool
                                 Items["OptionHolder"].Instance.ZIndex = Bool and 15 or 1
-                        end)
+                        end
                 end
                 for Index, Value in Dropdown.Items do
                         Dropdown:Add(Value)
