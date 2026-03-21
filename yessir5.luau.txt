@@ -10420,84 +10420,50 @@ do
                         
                         
                         local box_frame = Instance.new("Frame")
-                        local box_frame = Instance.new("Frame")
-                        box_frame.BackgroundColor3 = Color3.new(1, 1, 1)
                         box_frame.BackgroundColor3 = Color3.new(1, 1, 1)
                         box_frame.BackgroundTransparency = Stranded.box.transparency
-                        box_frame.BackgroundTransparency = Stranded.box.transparency
-                        box_frame.BorderSizePixel = 0
                         box_frame.BorderSizePixel = 0
                         box_frame.Name = "BoxFrame"
-                        box_frame.Name = "BoxFrame"
-                        box_frame.Parent = box_gui
                         box_frame.Parent = box_gui
                         
                         
                         local box_gradient = Instance.new("UIGradient")
-                        local box_gradient = Instance.new("UIGradient")
-                        if Stranded.box.gradient.enabled then
                         if Stranded.box.gradient.enabled then
                                 box_gradient.Color = ColorSequence.new({
-                                box_gradient.Color = ColorSequence.new({
-                                        ColorSequenceKeypoint.new(0, Stranded.box.gradient.top_color),
                                         ColorSequenceKeypoint.new(0, Stranded.box.gradient.top_color),
                                         ColorSequenceKeypoint.new(1, Stranded.box.gradient.bottom_color)
-                                        ColorSequenceKeypoint.new(1, Stranded.box.gradient.bottom_color)
-                                })
                                 })
                                 box_gradient.Rotation = Stranded.box.gradient.rotation
-                                box_gradient.Rotation = Stranded.box.gradient.rotation
                                 box_gradient.Parent = box_frame
-                                box_gradient.Parent = box_frame
-                        end
                         end
                         
                         
                         cache.box.full.gui = box_gui
-                        cache.box.full.gui = box_gui
                         cache.box.full.frame = box_frame
-                        cache.box.full.frame = box_frame
-                        cache.box.full.gradient = box_gradient
                         cache.box.full.gradient = box_gradient
                         
                         
                         cache.skeleton = {}
-                        cache.skeleton = {}
-                        for i = 1, #self.skeleton_conns do
                         for i = 1, #self.skeleton_conns do
                                 cache.skeleton[i] = {
-                                cache.skeleton[i] = {
-                                        line = Drawing.new("Line"),
                                         line = Drawing.new("Line"),
                                         outline = Drawing.new("Line"),
-                                        outline = Drawing.new("Line"),
                                 }
-                                }
-                        end
                         end
                         
                         
                         local studs_gui = Instance.new("ScreenGui")
-                        local studs_gui = Instance.new("ScreenGui")
                         studs_gui.Parent = self.vars.core_gui
-                        studs_gui.Parent = self.vars.core_gui
-                        studs_gui.Name = player.Name .. "_StudsGui"
                         studs_gui.Name = player.Name .. "_StudsGui"
                         
                         
                         local name_gui = Instance.new("ScreenGui")
-                        local name_gui = Instance.new("ScreenGui")
                         name_gui.Parent = self.vars.core_gui
-                        name_gui.Parent = self.vars.core_gui
-                        name_gui.Name = player.Name .. "_NameGui"
                         name_gui.Name = player.Name .. "_NameGui"
                         
                         
                         local tool_gui = Instance.new("ScreenGui")
-                        local tool_gui = Instance.new("ScreenGui")
                         tool_gui.Parent = self.vars.core_gui
-                        tool_gui.Parent = self.vars.core_gui
-                        tool_gui.Name = player.Name .. "_ToolGui"
                         tool_gui.Name = player.Name .. "_ToolGui"
                         
                         
